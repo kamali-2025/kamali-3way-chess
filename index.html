@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>3-Way Online Chess Arena — Dr. Alireza Kamali Dehkordi</title>
+<style>
+  * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+  body { margin: 0; background: #14161b; color: #f1f2f6; display: flex; flex-direction: column; align-items: center; }
+  header { width: 100%; background: #22252c; padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; border-bottom: 1px solid #333; }
+  input, select, button { padding: 6px 10px; border-radius: 6px; border: 1px solid #444; background: #2f333d; color: #fff; font-size: 13px; }
+  button { background: #2980b9; border: none; font-weight: bold; cursor: pointer; }
+  button.green { background: #27ae60; }
+  #status { width: 100%; text-align: center; padding: 8px; background: #1b1e24; font-weight: bold; color: #2ecc71; font-size: 15px; }
+  .layout { display: flex; flex-wrap: wrap; gap: 16px; padding: 12px; justify-content: center; max-width: 1120px; width: 100%; }
+  canvas { background: #181a1f; border-radius: 10px; max-width: 100%; height: auto; touch-action: manipulation; box-shadow: 0 6px 20px rgba(0,0,0,0.45); }
+  .panel { background: #22252c; border-radius: 10px; padding: 12px; width: 310px; display: flex; flex-direction: column; gap: 10px; }
+  .card { background: #181a1f; padding: 10px; border-radius: 8px; font-family: Consolas, monospace; font-size: 13px; line-height: 1.5; }
+  #chatBox { height: 220px; overflow-y: auto; background: #181a1f; padding: 8px; border-radius: 8px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+  .chatRow { display: flex; gap: 6px; }
+  .chatRow input { flex: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <strong>3-Way Chess</strong>
+  <input id="p1" value="Dr. Kamali" size="10" title="White Name" />
+  <input id="p2" value="Friend 2" size="10" title="Black Name" />
+  <input id="p3" value="Friend 3" size="10" title="Gold Name" />
+  <select id="seat">
+    <option value="ALL">Seat: ALL</option>
+    <option value="1">Seat 1 (White)</option>
+    <option value="2">Seat 2 (Black)</option>
+    <option value="3">Seat 3 (Gold)</option>
+  </select>
+  <input id="room" value="KAMALI-3WAY" size="11" title="Room Code" />
+  <button onclick="applyAndPush()">Sync</button>
+  <button class="green" onclick="resetMatch()">New Match</button>
+</header>
+
+<div id="status">Connecting to live 3-Way Arena...</div>
+
+<div class="layout">
+  <canvas id="board" width="720" height="580"></canvas>
+  <div class="panel">
+    <div style="font-weight:bold;color:#f1c40f;">3-WAY SCOREBOARD</div>
+    <div id="roster" class="card"></div>
+    <div style="font-weight:bold;color:#5dade2;">LIVE 3-PLAYER CHAT</div>
+    <div id="chatBox"></div>
+    <div class="chatRow">
+      <input id="chatInput" placeholder="Message friends..." onkeydown="if(event.key==='Enter')sendChat()" />
+      <button onclick="sendChat()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DB_URL = "https://kamali-chess-3way-542c9-default-rtdb.firebaseio.com";
+const SYMBOLS = { K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙" };
+const STYLES = [
+  { fill: "#ffffff", stroke: "#111111", tag: "WHITE" },
+  { fill: "#1e272e", stroke: "#d2dae2", tag: "BLACK" },
+  { fill: "#f39c12", stroke: "#111111", tag: "GOLD" }
+];
+
+const params = new URLSearchParams(window.location.search);
+if (params.get("seat")) document.getElementById("seat").value = params.get("seat").toUpperCase();
+if (params.get("room")) document.getElementById("room").value = params.get("room");
+
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+
+let cells = {};
+let pieces = {};
+let turn = 0;
+let alive = [true, true, true];
+let scores =;
+let moveSeq = 0;
+let selected = null;
+let highlights = [];
+let chatLog = ["System: Welcome to Dr. Kamali's 3-Way Online Chess!"];
+
+function build96Cells() {
+  const cx = 360, cy = 290, rIn = 40, rOut = 255;
+  cells = {};
+  for (let w = 0; w < 3; w++) {
+    const cAng = (90 + w * 120) * Math.PI / 180;
+    const lAng = cAng + 56 * Math.PI / 180;
+    const rAng = cAng - 56 * Math.PI / 180;
+    for (let r = 0; r < 4; r++) {
+      const rad0 = rIn + (1 - r / 4) * (rOut - rIn);
+      const rad1 = rIn + (1 - (r + 1) / 4) * (rOut - rIn);
+      for (let f = 0; f < 8; f++) {
+        const a0 = lAng + (f / 8) * (rAng - lAng);
+        const a1 = lAng + ((f + 1) / 8) * (rAng - lAng);
+        const p1 = [cx + rad0 * Math.cos(a0), cy + rad0 * Math.sin(a0)];
+        const p2 = [cx + rad0 * Math.cos(a1), cy + rad0 * Math.sin(a1)];
+        const p3 = [cx + rad1 * Math.cos(a1), cy + rad1 * Math.sin(a1)];
+        const p4 = [cx + rad1 * Math.cos(a0), cy + rad1 * Math.sin(a0)];
+        cells[`${w},${r},${f}`] = {
+          poly: [p1, p2, p3, p4],
+          center: [(p1+p2+p3+p4)/4, (p1+p2+p3+p4)/4],
+          light: (r + f) % 2 === 0
+        };
+      }
+    }
+  }
+}
+
+function initPieces() {
+  const back = ["R", "N", "B", "Q", "K", "B", "N", "R"];
+  pieces = {};
+  for (let w = 0; w < 3; w++) {
+    for (let f = 0; f < 8; f++) {
+      pieces[`${w},0,${f}`] = [w, back[f]];
+      pieces[`${w},1,${f}`] = [w, "P"];
+    }
+  }
+}
+
+function getTargets(key) {
+  if (!pieces[key]) return [];
+  const [owner, kind] = pieces[key];
+  const [w, r, f] = key.split(",").map(Number);
+  const out = new Set();
+
+  function addSquare(tw, tr, tf) {
+    const k = `${tw},${tr},${tf}`;
+    if (!cells[k]) return false;
+    if (!pieces[k]) { out.add(k); return true; }
+    if (pieces[k] !== owner) out.add(k);
+    return false;
+  }
+
+  if (kind === "P") {
+    if (r < 3) {
+      if (!pieces[`${w},${r+1},${f}`]) {
+        out.add(`${w},${r+1},${f}`);
+        if (r === 1 && !pieces[`${w},2,${f}`]) out.add(`${w},2,${f}`);
+      }
+      for (const df of [-1, 1]) {
+        const cap = `${w},${r+1},${f+df}`;
+        if (pieces[cap] && pieces[cap] !== owner) out.add(cap);
+      }
+    } else {
+      for (const ow of [(w + 1) % 3, (w + 2) % 3]) {
+        const mf = 7 - f;
+        if (!pieces[`${ow},3,${mf}`]) out.add(`${ow},3,${mf}`);
+        for (const df of [-1, 1]) {
+          const cap = `${ow},3,${mf+df}`;
+          if (pieces[cap] && pieces[cap] !== owner) out.add(cap);
+        }
+      }
+    }
+    return [...out];
+  }
+
+  if (kind === "N" || kind === "K") {
+    const [cx, cy] = cells[key].center;
+    const [minD, maxD] = kind === "N" ? :;
+    for (const [cand, info] of Object.entries(cells)) {
+      if (cand === key) continue;
+      const dist = Math.hypot(info.center - cx, info.center - cy);
+      if (dist >= minD && dist <= maxD) {
+        if (!pieces[cand] || pieces[cand] !== owner) out.add(cand);
+      }
+    }
+    return [...out];
+  }
+
+  const dirs = [];
+  if (kind === "R" || kind === "Q") dirs.push(,[-1,0],,[0,-1]);
+  if (kind === "B" || kind === "Q") dirs.push(,[1,-1],[-1,1],[-1,-1]);
+
+  for (const [dr, df] of dirs) {
+    let cr = r + dr, cf = f + df;
+    while (cr >= 0 && cr <= 3 && cf >= 0 && cf <= 7) {
+      if (!addSquare(w, cr, cf)) break;
+      cr += dr; cf += df;
+    }
+    if (cr > 3 && cf >= 0 && cf <= 7) {
+      for (const ow of [(w + 1) % 3, (w + 2) % 3]) {
+        let ocf = 7 - cf, ocr = 3;
+        while (ocr >= 0 && ocr <= 3 && ocf >= 0 && ocf <= 7) {
+          if (!addSquare(ow, ocr, ocf)) break;
+          ocr -= 1; ocf += df;
+        }
+      }
+    }
+  }
+  return [...out];
+}
+
+function names() {
+  return [
+    document.getElementById("p1").value.trim() || "Player 1",
+    document.getElementById("p2").value.trim() || "Player 2",
+    document.getElementById("p3").value.trim() || "Player 3"
+  ];
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.beginPath();
+  ctx.arc(360, 290, 40, 0, Math.PI * 2);
+  ctx.fillStyle = "#2c3e50"; ctx.fill();
+  ctx.strokeStyle = "#f1c40f"; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = "#f1c40f"; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center";
+  ctx.fillText("3-WAY HUB", 360, 294);
+
+  for (const [sq, info] of Object.entries(cells)) {
+    ctx.beginPath();
+    info.poly.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+    ctx.closePath();
+    ctx.fillStyle = selected === sq ? "#f7ec63" : (highlights.includes(sq) ? "#5dade2" : (info.light ? "#eed9b9" : "#7b9a58"));
+    ctx.fill();
+    ctx.strokeStyle = "#2c241b"; ctx.lineWidth = 1; ctx.stroke();
+
+    if (pieces[sq]) {
+      const [owner, kind] = pieces[sq];
+      const st = STYLES[owner];
+      const [cx, cy] = info.center;
+      ctx.font = "bold 22px 'Segoe UI Symbol', sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.lineWidth = 3; ctx.strokeStyle = st.stroke;
+      ctx.strokeText(SYMBOLS[kind], cx, cy);
+      ctx.fillStyle = st.fill;
+      ctx.fillText(SYMBOLS[kind], cx, cy);
+    }
+  }
+
+  const n = names();
+  const banners = [[n, 360, 565, "#fff"], [n, 115, 115, "#a4b0be"], [n, 605, 115, "#f39c12"]];
+  banners.forEach(([txt, x, y, col], i) => {
+    ctx.fillStyle = col; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(`${txt} (${STYLES[i].tag})`, x, y);
+  });
+
+  document.getElementById("status").textContent = `Room: ${document.getElementById("room").value}  |  Turn: ${n[turn]} (${STYLES[turn].tag})`;
+  document.getElementById("roster").innerHTML = n.map((nm, i) =>
+    `${turn === i && alive[i] ? "▶ " : "&nbsp;&nbsp;"}${STYLES[i].tag.padEnd(5)}: ${nm} (${scores[i]} pts)`
+  ).join("<br>") + `<br><hr style="border-color:#333">Your Control: Seat ${document.getElementById("seat").value}`;
+
+  const cb = document.getElementById("chatBox");
+  cb.innerHTML = chatLog.slice(-25).map(m => `<div>${m}</div>`).join("");
+  cb.scrollTop = cb.scrollHeight;
+}
+
+function pointInPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
