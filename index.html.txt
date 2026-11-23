@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kamali 3-Way Online Chess Arena</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --panel-2: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --p1: #f8fafc;
+      --p2: #ef4444;
+      --p3: #22c55e;
+      --light-sq: #cbd5e1;
+      --dark-sq: #475569;
+      --sel: #facc15;
+      --valid: rgba(56, 189, 248, 0.55);
+    }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    header {
+      width: 100%;
+      max-width: 1120px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      background: var(--panel);
+      padding: 12px 18px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+    }
+    h1 { margin: 0; font-size: 1.25rem; letter-spacing: 0.3px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button, select, input {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid #475569;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    button:hover { background: #475569; }
+    button.primary { background: #0284c7; border-color: #38bdf8; font-weight: 600; }
+    button.primary:hover { background: #0369a1; }
+    .main {
+      width: 100%;
+      max-width: 1120px;
+      display: grid;
+      grid-template-columns: 1fr 330px;
+      gap: 16px;
+    }
+    @media (max-width: 900px) {
+      .main { grid-template-columns: 1fr; }
+    }
+    .board-wrap {
+      background: var(--panel);
+      border-radius: 14px;
+      padding: 14px;
+      border: 1px solid #334155;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    svg#board {
+      width: 100%;
+      max-width: 680px;
+      height: auto;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    .sidebar {
+      background: var(--panel);
+      border-radius: 14px;
+      padding: 16px;
+      border: 1px solid #334155;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .card h3 { margin: 0 0 8px 0; font-size: 0.95rem; color: var(--accent); }
+    .player-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      font-size: 0.9rem;
+    }
+    .player-row.active { background: #1e293b; outline: 1px solid var(--accent); font-weight: 700; }
+    .player-row.eliminated { opacity: 0.45; text-decoration: line-through; }
+    .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 8px; }
+    #log {
+      height: 190px;
+      overflow-y: auto;
+      font-size: 0.84rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .share-links { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; }
+    .share-item { display: flex; gap: 6px; }
+    .share-item input { flex: 1; font-size: 0.78rem; padding: 5px 8px; cursor: text; }
+    .status-banner {
+      margin-top: 8px;
+      font-weight: 600;
+      color: #facc15;
+      min-height: 22px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>♟️ Kamali 3-Way Online Chess Arena</h1>
+    <div class="controls">
+      <label style="font-size:0.85rem;color:var(--muted);">Your Seat:</label>
+      <select id="seatSelect">
+        <option value="0">All Seats (Pass &amp; Play / Solo)</option>
+        <option value="1">Seat 1 — White (Bottom)</option>
+        <option value="2">Seat 2 — Crimson (Top-Left)</option>
+        <option value="3">Seat 3 — Emerald (Top-Right)</option>
+      </select>
+      <label style="font-size:0.85rem;color:var(--muted);">
+        <input type="checkbox" id="aiToggle" checked /> AI Bots for Empty Seats
+      </label>
+      <button class="primary" id="newMatchBtn">New Match</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="board-wrap">
+      <svg id="board" viewBox="-340 -340 680 680"></svg>
+      <div class="status-banner" id="statusBanner">White's Turn (Seat 1)</div>
+    </div>
+
+    <div class="sidebar">
+      <div class="card">
+        <h3>Players &amp; Turn Order</h3>
+        <div class="player-row active" id="pRow1">
+          <span><span class="dot" style="background:var(--p1)"></span>Seat 1: White</span>
+          <span id="pStat1">Active</span>
+        </div>
+        <div class="player-row" id="pRow2">
+          <span><span class="dot" style="background:var(--p2)"></span>Seat 2: Crimson</span>
+          <span id="pStat2">Active</span>
+        </div>
+        <div class="player-row" id="pRow3">
+          <span><span class="dot" style="background:var(--p3)"></span>Seat 3: Emerald</span>
+          <span id="pStat3">Active</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Online Room &amp; Seat Links</h3>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <input id="roomInput" placeholder="Room ID" style="width:120px;cursor:text;" />
+          <button id="joinRoomBtn">Sync Room</button>
+        </div>
+        <div class="share-links" id="shareLinks"></div>
+        <div style="font-size:0.75rem;color:var(--muted);margin-top:6px;">
+          Share Seat 2 &amp; Seat 3 links with friends. Moves sync live across tabs &amp; devices via room relay.
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Move History</h3>
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Hexagonal 3-Player Chess (Glinski-inspired 91-cell hex grid, radius 5)
+    // Axial coordinates (q, r) with max(|q|, |r|, |q+r|) <= 5
+    const RADIUS = 5;
+    const HEX_SIZE = 32;
+    const PIECE_GLYPHS = {
+      K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙'
+    };
+    const PIECE_VAL = { K: 1000, Q: 9, R: 5, B: 3, N: 3, P: 1 };
+    const PLAYER_NAMES = { 1: 'White', 2: 'Crimson', 3: 'Emerald' };
+    const PLAYER_COLORS = { 1: '#f8fafc', 2: '#ef4444', 3: '#22c55e' };
+
+    let board = {}; // key "q,r" -> { owner: 1|2|3, type: 'K'|'Q'|'R'|'B'|'N'|'P', moved: bool }
+    let turn = 1;
+    let eliminated = { 1: false, 2: false, 3: false };
+    let selected = null;
+    let legalMoves = [];
+    let history = [];
+    let roomId = new URLSearchParams(location.search).get('room') || 'kamali-' + Math.random().toString(36).slice(2, 7);
+    let mySeat = parseInt(new URLSearchParams(location.search).get('seat') || '0', 10);
+    if (![0, 1, 2, 3].includes(mySeat)) mySeat = 0;
+
+    const svg = document.getElementById('board');
+    const seatSelect = document.getElementById('seatSelect');
+    const aiToggle = document.getElementById('aiToggle');
+    const statusBanner = document.getElementById('statusBanner');
+    const logEl = document.getElementById('log');
+    const roomInput = document.getElementById('roomInput');
+
+    seatSelect.value = String(mySeat);
+    roomInput.value = roomId;
+
+    function key(q, r) { return `${q},${r}`; }
+    function parseKey(k) { return k.split(',').map(Number); }
+    function isValidHex(q, r) {
+      const s = -q - r;
+      return Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) <= RADIUS;
+    }
+
+    function hexToPixel(q, r) {
+      const x = HEX_SIZE * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r);
+      const y = HEX_SIZE * (1.5 * r);
+      return { x, y };
+    }
+
+    function hexColorIndex(q, r) {
+      return (((q - r) % 3) + 3) % 3;
+    }
+
+    function initBoard() {
+      board = {};
+      turn = 1;
+      eliminated = { 1: false, 2: false, 3: false };
+      selected = null;
+      legalMoves = [];
+      history = [];
+
+      // Seat 1 (Bottom: r = +5, +4, +3)
+      const p1Back = [
+        [-5, 5, 'R'], [-4, 5, 'N'], [-3, 5, 'B'], [-2, 5, 'Q'], [-1, 5, 'K'], [0, 5, 'R'],
+        [-4, 4, 'B'], [-2, 4, 'N'], [-1, 4, 'B']
+      ];
+      p1Back.forEach(([q, r, t]) => { if (isValidHex(q, r)) board[key(q, r)] = { owner: 1, type: t, moved: false }; });
+      for (let q = -5; q <= 1; q++) {
+        if (isValidHex(q, 3)) board[key(q, 3)] = { owner: 1, type: 'P', moved: false };
+      }
+
+      // Seat 2 (Top-Left: q = -5, -4, -3)
+      const p2Back = [
+        [-5, 0, 'R'], [-5, 1, 'N'], [-5, 2, 'B'], [-5, 3, 'Q'], [-5, 4, 'K'], [-5, 5, 'R'],
+        [-4, 1, 'B'], [-4, 2, 'N'], [-4, 3, 'B']
+      ];
+      p2Back.forEach(([q, r, t]) => { if (isValidHex(q, r)) board[key(q, r)] = { owner: 2, type: t, moved: false }; });
+      for (let r = -1; r <= 5; r++) {
+        if (isValidHex(-3, r)) board[key(-3, r)] = { owner: 2, type: 'P', moved: false };
+      }
+
+      // Seat 3 (Top-Right: s = -q-r = -5, -4, -3 -> q + r = 5? Wait: top-right has q >= 0, r <= 0, s = -5)
+      const p3Back = [
+        [0, -5, 'R'], [1, -5, 'N'], [2, -5, 'B'], [3, -5, 'Q'], [4, -5, 'K'], [5, -5, 'R'],
+        [1, -4, 'B'], [2, -4, 'N'], [3, -4, 'B']
+      ];
+      p3Back.forEach(([q, r, t]) => { if (isValidHex(q, r)) board[key(q, r)] = { owner: 3, type: t, moved: false }; });
+      for (let q = -1; q <= 5; q++) {
+        const r = 3 - q;
+        if (isValidHex(q, r)) board[key(q, r)] = { owner: 3, type: 'P', moved: false };
+      }
+      // Ensure Seat 1 & Seat 2 don't collide at (-5,5)
+      board[key(-5, 5)] = { owner: 1, type: 'R', moved: false };
+      board[key(-5, 0)] = { owner: 2, type: 'R', moved: false };
+      board[key(0, 5)] = { owner: 1, type: 'R', moved: false };
+      board[key(5, -5)] = { owner: 3, type: 'R', moved: false };
+
+      logEl.innerHTML = '';
+      addLog('Match started. White (Seat 1) moves first.');
+      syncState(true);
+      render();
+    }
+
+    // 6 orthogonal hex directions & 6 diagonal hex directions
+    const ORTHO_DIRS = [
+      [1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]
+    ];
+    const DIAG_DIRS = [
+      [2, -1], [1, -2], [-1, -1], [-2, 1], [-1, 2], [1, 1]
+    ];
+    const KNIGHT_JUMPS = [
+      [3, -1], [3, -2], [2, -3], [1, -3], [-1, -2], [-2, -1],
+      [-3, 1], [-3, 2], [-2, 3], [-1, 3], [1, 2], [2, 1]
+    ];
+
+    function getPseudoMoves(q, r, state = board) {
+      const p = state[key(q, r)];
+      if (!p) return [];
+      const moves = [];
+      const addSlide = (dirs, maxSteps = 12) => {
+        for (const [dq, dr] of dirs) {
+          for (let step = 1; step <= maxSteps; step++) {
+            const nq = q + dq * step;
+            const nr = r + dr * step;
+            if (!isValidHex(nq, nr)) break;
+            const target = state[key(nq, nr)];
+            if (!target) {
+              moves.push([nq, nr]);
+            } else {
+              if (target.owner !== p.owner) moves.push([nq, nr]);
+              break;
+            }
+          }
+        }
+      };
+
+      if (p.type === 'R') addSlide(ORTHO_DIRS);
+      else if (p.type === 'B') addSlide(DIAG_DIRS);
+      else if (p.type === 'Q') { addSlide(ORTHO_DIRS); addSlide(DIAG_DIRS); }
+      else if (p.type === 'K') { addSlide(ORTHO_DIRS, 1); addSlide(DIAG_DIRS, 1); }
+      else if (p.type === 'N') {
+        for (const [dq, dr] of KNIGHT_JUMPS) {
+          const nq = q + dq, nr = r + dr;
+          if (!isValidHex(nq, nr)) continue;
+          const target = state[key(nq, nr)];
+          if (!target || target.owner !== p.owner) moves.push([nq, nr]);
+        }
+      } else if (p.type === 'P') {
+        // Forward vectors per seat
+        const fwd = p.owner === 1 ? [[0, -1], [1, -1]] :
+                    p.owner === 2 ? [[1, 0], [1, -1]] :
+                                    [[-1, 1], [0, 1]];
+        const caps = p.owner === 1 ? [[-1, 0], [1, -2], [2, -1]] :
+                     p.owner === 2 ? [[0, -1], [0, 1], [2, -1]] :
+                                     [[-1, 0], [1, 0], [-1, 2]];
+        for (const [dq, dr] of fwd) {
+          const nq = q + dq, nr = r + dr;
+          if (isValidHex(nq, nr) && !state[key(nq, nr)]) {
+            moves.push([nq, nr]);
+            if (!p.moved) {
+              const nq2 = nq + dq, nr2 = nr + dr;
+              if (isValidHex(nq2, nr2) && !state[key(nq2, nr2)]) moves.push([nq2, nr2]);
+            }
+          }
+        }
+        for (const [dq, dr] of caps) {
+          const nq = q + dq, nr = r + dr;
+          if (isValidHex(nq, nr) && state[key(nq, nr)] && state[key(nq, nr)].owner !== p.owner) {
+            moves.push([nq, nr]);
+          }
+        }
+      }
+      return moves;
+    }
+
+    function executeMove(fq, fr, tq, tr, isRemote = false) {
+      const piece = board[key(fq, fr)];
+      if (!piece) return;
+      const target = board[key(tq, tr)];
+      delete board[key(fq, fr)];
+      piece.moved = true;
+
+      // Pawn promotion at far edge
+      if (piece.type === 'P') {
+        if ((piece.owner === 1 && tr === -5) ||
+            (piece.owner === 2 && tq === 5) ||
+            (piece.owner === 3 && (-tq - tr) === 5)) {
+          piece.type = 'Q';
+        }
+      }
+
+      board[key(tq, tr)] = piece;
+      let note = `${PLAYER_NAMES[piece.owner]} ${piece.type} (${fq},${fr}) → (${tq},${tr})`;
+      if (target) {
+        note += ` captures ${PLAYER_NAMES[target.owner]} ${target.type}`;
+        if (target.type === 'K') {
+          eliminated[target.owner] = true;
+          note += ` — ${PLAYER_NAMES[target.owner]} ELIMINATED!`;
+          // Convert eliminated player's remaining pieces to neutral/captured or remove
+          for (const k of Object.keys(board)) {
+            if (board[k].owner === target.owner) delete board[k];
+          }
+        }
+      }
+      addLog(note);
+
+      // Advance turn to next active player
+      for (let i = 0; i < 3; i++) {
+        turn = (turn % 3) + 1;
+        if (!eliminated[turn]) break;
+      }
+
+      selected = null;
+      legalMoves = [];
+      render();
+      if (!isRemote) syncState(false);
+      checkWinnerAndBot();
+    }
+
+    function checkWinnerAndBot() {
+      const alive = [1, 2, 3].filter(p => !eliminated[p]);
+      if (alive.length === 1) {
+        statusBanner.textContent = `🏆 ${PLAYER_NAMES[alive[0]]} (Seat ${alive[0]}) Wins the Match!`;
+        return;
+      }
+      statusBanner.textContent = `${PLAYER_NAMES[turn]}'s Turn (Seat ${turn})`;
+
+      // Trigger AI bot if enabled and current turn is not user's active seat
+      if (aiToggle.checked && mySeat !== 0 && turn !== mySeat) {
+        setTimeout(runBotMove, 450);
+      }
+    }
+
+    function runBotMove() {
+      const alive = [1, 2, 3].filter(p => !eliminated[p]);
+      if (alive.length <= 1) return;
+      if (mySeat !== 0 && turn === mySeat) return;
+
+      let bestScore = -9999;
+      let bestMove = null;
+      for (const k of Object.keys(board)) {
+        const p = board[k];
+        if (p.owner !== turn) continue;
+        const [fq, fr] = parseKey(k);
+        const moves = getPseudoMoves(fq, fr);
+        for (const [tq, tr] of moves) {
+          const target = board[key(tq, tr)];
+          let score = (Math.random() * 0.4) - (Math.abs(tq) + Math.abs(tr)) * 0.05;
+          if (target) score += PIECE_VAL[target.type] * 10;
+          if (score > bestScore) {
+            bestScore = score;
+            bestMove = [fq, fr, tq, tr];
+          }
+        }
+      }
+      if (bestMove) executeMove(...bestMove);
+    }
+
+    function handleHexClick(q, r) {
+      const alive = [1, 2, 3].filter(p => !eliminated[p]);
+      if (alive.length <= 1) return;
+      if (mySeat !== 0 && turn !== mySeat) {
+        statusBanner.textContent = `Wait for ${PLAYER_NAMES[turn]} (You are Seat ${mySeat})`;
+        return;
+      }
+
+      if (selected) {
+        const isLegal = legalMoves.some(([mq, mr]) => mq === q && mr === r);
+        if (isLegal) {
+          executeMove(selected[0], selected[1], q, r);
+          return;
+        }
+      }
+
+      const piece = board[key(q, r)];
+      if (piece && piece.owner === turn) {
+        selected = [q, r];
+        legalMoves = getPseudoMoves(q, r);
+      } else {
+        selected = null;
+        legalMoves = [];
+      }
+      render();
+    }
+
+    function render() {
+      svg.innerHTML = '';
+      const palette = ['#e2e8f0', '#94a3b8', '#64748b'];
+
+      for (let q = -RADIUS; q <= RADIUS; q++) {
+        for (let r = -RADIUS; r <= RADIUS; r++) {
+          if (!isValidHex(q, r)) continue;
+          const { x, y } = hexToPixel(q, r);
+          const pts = [];
+          for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI / 180) * (60 * i - 30);
+            pts.push(`${x + HEX_SIZE * Math.cos(angle)},${y + HEX_SIZE * Math.sin(angle)}`);
+          }
+
+          const isSel = selected && selected[0] === q && selected[1] === r;
+          const isMove = legalMoves.some(([mq, mr]) => mq === q && mr === r);
+          let fill = palette[hexColorIndex(q, r)];
+          if (isSel) fill = '#facc15';
+
+          const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          g.style.cursor = 'pointer';
+          g.addEventListener('click', () => handleHexClick(q, r));
+
+          const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+          poly.setAttribute('points', pts.join(' '));
+          poly.setAttribute('fill', fill);
+          poly.setAttribute('stroke', '#1e293b');
+          poly.setAttribute('stroke-width', '1.5');
+          g.appendChild(poly);
+
+          if (isMove) {
+            const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            dot.setAttribute('cx', x);
+            dot.setAttribute('cy', y);
+            dot.setAttribute('r', board[key(q, r)] ? '18' : '8');
+            dot.setAttribute('fill', board[key(q, r)] ? 'rgba(239,68,68,0.45)' : 'rgba(2,132,199,0.65)');
+            g.appendChild(dot);
+          }
+
+          const piece = board[key(q, r)];
+          if (piece) {
+            const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            txt.setAttribute('x', x);
+            txt.setAttribute('y', y + 10);
+            txt.setAttribute('text-anchor', 'middle');
+            txt.setAttribute('font-size', '28');
+            txt.setAttribute('font-weight', 'bold');
+            txt.setAttribute('fill', PLAYER_COLORS[piece.owner]);
+            txt.setAttribute('stroke', '#0f172a');
+            txt.setAttribute('stroke-width', '1.2');
+            txt.textContent = PIECE_GLYPHS[piece.type];
+            g.appendChild(txt);
+          }
+
+          svg.appendChild(g);
+        }
+      }
+
+      // Update player rows
+      for (let p = 1; p <= 3; p++) {
+        const row = document.getElementById(`pRow${p}`);
+        const stat = document.getElementById(`pStat${p}`);
+        row.classList.toggle('active', turn === p && !eliminated[p]);
+        row.classList.toggle('eliminated', eliminated[p]);
+        stat.textContent = eliminated[p] ? 'Eliminated' : (turn === p ? 'Thinking...' : 'Waiting');
+      }
+    }
+
+    function addLog(msg) {
+      history.push(msg);
+      const div = document.createElement('div');
+      div.textContent = `• ${msg}`;
+      logEl.prepend(div);
+    }
+
+    // Cross-tab BroadcastChannel + localStorage live room sync
+    let channel = null;
+    function setupSync() {
+      if (channel) channel.close();
+      channel = new BroadcastChannel('kamali_3way_' + roomId);
+      channel.onmessage = (e) => {
+        if (e.data && e.data.type === 'STATE') {
+          board = e.data.board;
+          turn = e.data.turn;
+          eliminated = e.data.eliminated;
+          render();
+          checkWinnerAndBot();
+        }
+      };
+      updateShareLinks();
+    }
+
+    function syncState(reset) {
+      const payload = { type: 'STATE', board, turn, eliminated, ts: Date.now() };
+      localStorage.setItem('kamali_3way_' + roomId, JSON.stringify(payload));
+      if (channel) channel.postMessage(payload);
+    }
+
+    function updateShareLinks() {
+      const container = document.getElementById('shareLinks');
+      container.innerHTML = '';
+      const base = location.origin + location.pathname;
+      [1, 2, 3].forEach(seat => {
+        const url = `${base}?room=${encodeURIComponent(roomId)}&seat=${seat}`;
+        const row = document.createElement('div');
+        row.className = 'share-item';
+        row.innerHTML = `<input readonly value="${url}" /><button onclick="navigator.clipboard.writeText('${url}')">Copy S${seat}</button>`;
+        container.appendChild(row);
+      });
+    }
+
+    seatSelect.addEventListener('change', () => {
+      mySeat = parseInt(seatSelect.value, 10);
+      checkWinnerAndBot();
+    });
+    document.getElementById('newMatchBtn').addEventListener('click', initBoard);
+    document.getElementById('joinRoomBtn').addEventListener('click', () => {
+      roomId = roomInput.value.trim() || roomId;
+      setupSync();
+      const saved = localStorage.getItem('kamali_3way_' + roomId);
+      if (saved) {
+        const data = JSON.parse(saved);
+        board = data.board;
+        turn = data.turn;
+        eliminated = data.eliminated;
+        render();
+      }
+    });
+
+    setupSync();
+    initBoard();
+  </script>
+</body>
+</html>
